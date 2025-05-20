@@ -23,20 +23,46 @@ class QuestionController extends Controller
         $correctAnswerText = null;
         $explanation = null;
 
-        // Cek apakah soal isian atau pilihan ganda
-        if ($question->question_type === 'fill_in_the_blank') {
-            // Validasi untuk soal isian
+        // === DRAG & DROP ===
+        if ($question->question_type === 'drag_and_drop') {
+            $request->validate([
+                'drag_and_drop_answers' => 'required|json',
+            ]);
+
+            $userAnswers = json_decode($request->drag_and_drop_answers, true);
+
+            // Ambil jawaban yang benar dari DB
+            $correctAnswers = $question->answers()
+                ->where('is_correct', true)
+                ->orderBy('id') // pastikan urutan konsisten
+                ->pluck('answer_text')
+                ->toArray();
+
+            $userSubmittedAnswers = collect($userAnswers)
+                ->sortBy('zone') // urutkan berdasarkan zona (1, 2, 3,...)
+                ->pluck('answer')
+                ->toArray();
+
+            $isCorrect = ($userSubmittedAnswers === $correctAnswers);
+
+            $selectedAnswerText = json_encode($userSubmittedAnswers);
+            $correctAnswerText = json_encode($correctAnswers);
+
+            // Ambil penjelasan dari salah satu jawaban
+            $firstCorrect = $question->answers()->where('is_correct', true)->first();
+            $explanation = $firstCorrect?->explanation;
+
+        // === ISIAN ===
+        } elseif ($question->question_type === 'fill_in_the_blank') {
             $request->validate([
                 'fill_in_the_blank_answer' => 'required|string',
             ]);
 
-            // Ambil jawaban yang benar dari database
             $correctAnswer = Answer::where('question_id', $question->id)
                                   ->where('is_correct', true)
                                   ->first();
 
             if ($correctAnswer) {
-                // Bandingkan jawaban user dengan jawaban yang benar (case insensitive)
                 $userAnswer = strtolower(trim($request->fill_in_the_blank_answer));
                 $dbAnswer = strtolower(trim($correctAnswer->answer_text));
                 
@@ -45,19 +71,18 @@ class QuestionController extends Controller
                 $correctAnswerText = $correctAnswer->answer_text;
                 $explanation = $correctAnswer->explanation;
             }
+
+        // === PILIHAN GANDA ===
         } else {
-            // Validasi untuk soal pilihan ganda
             $request->validate([
                 'answer' => 'required|exists:answers,id',
             ]);
 
-            // Ambil jawaban yang dipilih
             $selectedAnswer = Answer::findOrFail($request->answer);
             $isCorrect = $selectedAnswer->is_correct;
             $selectedAnswerText = $selectedAnswer->answer_text;
             $explanation = $selectedAnswer->explanation;
 
-            // Jika jawaban salah, ambil jawaban yang benar
             if (!$isCorrect) {
                 $correctAnswer = Answer::where('question_id', $question->id)
                                        ->where('is_correct', true)
@@ -85,12 +110,11 @@ class QuestionController extends Controller
             ->where('is_correct', true)
             ->pluck('question_id')
             ->toArray();
-            
+
         $nextQuestion = Question::where('material_id', $request->material_id)
             ->whereNotIn('id', $answeredQuestionIds)
             ->first();
 
-        // Response dalam format JSON
         return response()->json([
             'status' => $isCorrect ? 'success' : 'error',
             'message' => $isCorrect ? 'Jawaban Benar!' : 'Jawaban Salah!',

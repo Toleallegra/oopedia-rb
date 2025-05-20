@@ -82,34 +82,7 @@ class QuestionController extends Controller
 
         $questionType = $request->question_type;
 
-
-        
-        if (in_array($request->question_type, ['radio_button', 'fill_in_the_blank'])) {
-            $correctAnswersCount = collect($request->answers)->where('is_correct', true)->count();
-            if ($correctAnswersCount !== 1) {
-                return redirect()->back()->withInput()->with('error', ucfirst(str_replace('_', ' ', $request->question_type)) . ' questions must have exactly one correct answer.');
-
-        // if ($questionType === 'fill_in_the_blank') {
-        //     if (count($request->answers) > 1) {
-        //         return redirect()
-        //             ->back()
-        //             ->withInput()
-        //             ->with('error', 'Soal Fill in the Blank hanya boleh memiliki satu jawaban.');
-
-            }
-        }
-        // // Ensure only one correct answer for radio button type
-        // if ($request->question_type === 'radio_button') {
-        //     $correctAnswers = collect($request->answers)->where('is_correct', true)->count();
-        //     if ($correctAnswers !== 1) {
-        //         return back()
-        //             ->withInput()
-        //             ->withErrors(['correct_answer' => 'Soal dengan tipe Radio Button harus memiliki tepat satu jawaban yang benar.'])
-        //             ->with('warning', 'Pilih satu jawaban yang benar untuk tipe soal Radio Button');
-        //     }
-        // }
-
-        if (in_array($request->question_type, ['radio_button', 'fill_in_the_blank'])) {
+        if (in_array($request->question_type, ['radio_button', 'drag_and_drop'])) {
             $correctAnswersCount = collect($request->answers)->where('is_correct', true)->count();
             if ($correctAnswersCount !== 1) {
                 return redirect()
@@ -249,4 +222,3 @@ class QuestionController extends Controller
             ->with('success', 'Soal berhasil dihapus.');
     }
 }
-    

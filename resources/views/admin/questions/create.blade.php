@@ -136,7 +136,7 @@
             Array.from(existingAnswers).forEach((answerEntry, index) => {
                 const formCheck = answerEntry.querySelector('.form-check');
                 
-                if (questionType === 'radio_button') {
+                if (questionType === 'radio_button' || questionType === 'drag_and_drop') {
                     const isCorrect = formCheck.querySelector('input[name$="[is_correct]"]')?.value === '1';
                     formCheck.innerHTML = `
                         <input class="form-check-input" type="radio" name="correct_answer" value="${index}" ${isCorrect ? 'checked' : ''}>
@@ -207,7 +207,7 @@
             // Validasi form sebelum submit
             form.addEventListener('submit', function(e) {
                 const questionType = questionTypeSelect.value;
-                if (questionType === 'radio_button') {
+                if (questionType === 'radio_button' || questionType === 'drag_and_drop') {
                     const selectedRadio = document.querySelector('input[name="correct_answer"]:checked');
                     if (!selectedRadio) {
                         e.preventDefault();
