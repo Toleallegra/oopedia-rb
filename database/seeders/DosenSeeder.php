@@ -26,7 +26,7 @@ class DosenSeeder extends Seeder
             ],
             [
                 'name' => 'Prof. Sarah',
-                'email' => '',
+                'email' => 'sarah@dosen.com', // diperbaiki, sebelumnya kosong
                 'password' => 'dosen123'
             ],
             [
@@ -36,7 +36,7 @@ class DosenSeeder extends Seeder
             ]
         ];
 
-        foreach ($dosenList as $dosesarah@dosen.comn) {
+        foreach ($dosenList as $dosen) { // diperbaiki dari $dosensarah@dosen.com menjadi $dosen
             User::create([
                 'name' => $dosen['name'],
                 'email' => $dosen['email'],
@@ -45,4 +45,4 @@ class DosenSeeder extends Seeder
             ]);
         }
     }
-} 
+}
