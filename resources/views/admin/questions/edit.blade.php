@@ -1,4 +1,8 @@
 <x-layout bodyClass="g-sidenav-show bg-gray-200">
+    @push('head')
+        <x-head.tinymce-config />
+    @endpush
+
     <x-navbars.sidebar activePage="questions" :userName="auth()->user()->name" :userRole="auth()->user()->role->role_name" />
     <main class="main-content position-relative max-height-vh-100 h-100 border-radius-lg">
         <x-navbars.navs.auth titlePage="Edit Soal" />
@@ -16,7 +20,7 @@
                         <div class="card-body px-0 pb-2">
                             <form method="POST" action="{{ $material 
                                 ? route('admin.materials.questions.update', ['material' => $material, 'question' => $question]) 
-                                : route('admin.questions.update', $question) }}" class="p-4">
+                                : route('admin.questions.update', $question) }}" class="p-4" id="questionForm">
                                 @csrf
                                 @method('PUT')
                                 <div class="row">
@@ -43,8 +47,8 @@
                                     <div class="col-md-12">
                                         <div class="mb-3">
                                             <label class="form-label">Pertanyaan</label>
-                                            <div class="input-group input-group-outline">
-                                                <textarea name="question_text" class="form-control" rows="3" required>{{ $question->question_text }}</textarea>
+                                            <div class="my-3">
+                                                <textarea id="content-editor" name="question_text">{{ $question->question_text }}</textarea>
                                             </div>
                                         </div>
                                     </div>
@@ -60,28 +64,37 @@
                                             </div>
                                         </div>
                                     </div>
+                                    <div class="col-md-12">
+                                        <div class="mb-3">
+                                            <label class="form-label">Tingkat Kesulitan</label>
+                                            <div class="input-group input-group-outline">
+                                                <select name="difficulty" class="form-control" required>
+                                                    <option value="beginner" {{ $question->difficulty == 'beginner' ? 'selected' : '' }}>Beginner</option>
+                                                    <option value="medium" {{ $question->difficulty == 'medium' ? 'selected' : '' }}>Medium</option>
+                                                    <option value="hard" {{ $question->difficulty == 'hard' ? 'selected' : '' }}>Hard</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div id="answers-container">
                                     <h6 class="mb-3">Jawaban</h6>
                                     @foreach($question->answers as $index => $answer)
-                                        <div class="answer-entry mb-3">
+                                        <div class="answer-entry mb-3" data-correct="{{ $answer->is_correct ? '1' : '0' }}">
                                             <div class="row">
                                                 <div class="col-md-8">
                                                     <div class="input-group input-group-outline">
                                                         <input type="text" name="answers[{{ $index }}][answer_text]" class="form-control" placeholder="Jawaban" required value="{{ $answer->answer_text }}">
                                                     </div>
-                                                    <div class="input-group input-group-outline mt-2">
-                                                        <textarea name="answers[{{ $index }}][explanation]" class="form-control" placeholder="Penjelasan Jawaban" rows="2">{{ $answer->explanation }}</textarea>
-                                                    </div>
                                                 </div>
                                                 <div class="col-md-4">
                                                     <div class="form-check">
-                                                        @if($question->question_type === 'radio_button')
-                                                            <input class="form-check-input" type="radio" name="correct_answer" value="{{ $index }}" {{ $answer->is_correct ? 'checked' : '' }}>
+                                                        @if($question->question_type === 'radio_button' || $question->question_type === 'fill_in_the_blank')
+                                                            <input class="form-check-input correct-radio" type="radio" name="correct_answer" value="{{ $index }}" {{ $answer->is_correct ? 'checked' : '' }}>
                                                             <label class="form-check-label">Jawaban Benar</label>
                                                             <input type="hidden" name="answers[{{ $index }}][is_correct]" value="{{ $answer->is_correct ? '1' : '0' }}">
-                                                        @else
+                                                        @elseif($question->question_type === 'drag_and_drop')
                                                             <input class="form-check-input" type="checkbox" name="answers[{{ $index }}][is_correct]" value="1" {{ $answer->is_correct ? 'checked' : '' }}>
                                                             <label class="form-check-label">Jawaban Benar</label>
                                                         @endif
@@ -92,13 +105,13 @@
                                     @endforeach
                                 </div>
 
-                                <button type="button" class="btn btn-outline-primary btn-sm mb-3" onclick="addAnswer()">
+                                <button type="button" id="add-answer-btn" class="btn btn-outline-primary btn-sm mb-3" onclick="addAnswer()">
                                     Tambah Jawaban
                                 </button>
 
                                 <div class="row">
                                     <div class="col-12">
-                                        <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                                        <button type="submit" class="btn btn-primary" id="submitBtn">Simpan Perubahan</button>
                                         @if($material)
                                             <a href="{{ route('admin.materials.questions.index', $material) }}" class="btn btn-outline-secondary">Batal</a>
                                         @else
@@ -116,97 +129,160 @@
 
     @push('js')
     <script>
-        let answerCount = {{ count($question->answers) }};
+        let answerCount = 0; // Init dengan 0, akan dihitung ulang di handleQuestionTypeChange
 
         function handleQuestionTypeChange() {
             const questionType = document.querySelector('[name="question_type"]').value;
+            const answerContainer = document.getElementById('answers-container');
+            const addAnswerBtn = document.getElementById('add-answer-btn');
+
+            // Ambil data jawaban lama dari DOM
+            const oldAnswers = Array.from(answerContainer.querySelectorAll('.answer-entry')).map(entry => {
+                return {
+                    text: entry.querySelector('input[type="text"]').value,
+                    isCorrect: entry.getAttribute('data-correct') === '1',
+                };
+            });
+
+            // Reset container kecuali heading
+            const heading = answerContainer.querySelector('h6');
+            answerContainer.innerHTML = '';
+            answerContainer.appendChild(heading);
+
+            // Reset counter dan bangun ulang jawaban sesuai tipe soal dan data lama
+            answerCount = 0;
+
+            if (questionType === 'fill_in_the_blank') {
+                // Hanya satu jawaban, ambil dari oldAnswers jika ada, atau buat baru kosong
+                const ans = oldAnswers[0] || { text: '', isCorrect: true };
+                addAnswer(ans.text, ans.isCorrect, questionType);
+                if (addAnswerBtn) addAnswerBtn.style.display = 'none';
+            } else {
+                // Untuk tipe lain, minimal 2 jawaban
+                const countToAdd = Math.max(oldAnswers.length, 2);
+                for (let i = 0; i < countToAdd; i++) {
+                    const ans = oldAnswers[i] || { text: '', isCorrect: false };
+                    addAnswer(ans.text, ans.isCorrect, questionType);
+                }
+                if (addAnswerBtn) addAnswerBtn.style.display = 'inline-block';
+            }
+        }
+
+        function addAnswer(answerText = '', isCorrect = false, questionType = null) {
             const container = document.getElementById('answers-container');
-            const existingAnswers = container.getElementsByClassName('answer-entry');
-            
-            Array.from(existingAnswers).forEach((answerEntry, index) => {
-                const formCheck = answerEntry.querySelector('.form-check');
-                
-                if (questionType === 'radio_button') {
-                    const isCorrect = formCheck.querySelector('input[name$="[is_correct]"]')?.value === '1';
-                    formCheck.innerHTML = `
-                        <input class="form-check-input" type="radio" name="correct_answer" value="${index}" ${isCorrect ? 'checked' : ''}>
-                        <label class="form-check-label">Jawaban Benar</label>
-                        <input type="hidden" name="answers[${index}][is_correct]" value="${isCorrect ? '1' : '0'}">
-                    `;
-                } else {
-                    const isCorrect = formCheck.querySelector('input[name$="[is_correct]"]')?.value === '1';
-                    formCheck.innerHTML = `
-                        <input class="form-check-input" type="checkbox" name="answers[${index}][is_correct]" value="1" ${isCorrect ? 'checked' : ''}>
-                        <label class="form-check-label">Jawaban Benar</label>
-                    `;
+
+            if (!questionType) {
+                questionType = document.querySelector('[name="question_type"]').value;
+            }
+
+            // Cegah tambah lebih dari 1 jawaban untuk fill_in_the_blank
+            if (questionType === 'fill_in_the_blank' && container.getElementsByClassName('answer-entry').length >= 1) {
+                return;
+            }
+
+            const newAnswer = document.createElement('div');
+            newAnswer.className = 'answer-entry mb-3';
+            newAnswer.setAttribute('data-correct', isCorrect ? '1' : '0');
+
+            if (questionType === 'radio_button' || questionType === 'fill_in_the_blank') {
+                newAnswer.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="input-group input-group-outline">
+                                <input type="text" name="answers[${answerCount}][answer_text]" class="form-control" placeholder="Jawaban" required value="${answerText}">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input correct-radio" type="radio" name="correct_answer" value="${answerCount}" ${isCorrect ? 'checked' : ''}>
+                                <label class="form-check-label">Jawaban Benar</label>
+                                <input type="hidden" name="answers[${answerCount}][is_correct]" value="${isCorrect ? '1' : '0'}">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (questionType === 'drag_and_drop') {
+                newAnswer.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="input-group input-group-outline">
+                                <input type="text" name="answers[${answerCount}][answer_text]" class="form-control" placeholder="Jawaban" required value="${answerText}">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="answers[${answerCount}][is_correct]" value="1" ${isCorrect ? 'checked' : ''}>
+                                <label class="form-check-label">Jawaban Benar</label>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.appendChild(newAnswer);
+            answerCount++;
+
+            // Setup ulang listener radio button supaya sync hidden input
+            setupRadioButtonListeners();
+        }
+
+        function setupRadioButtonListeners() {
+            // Hapus listener dulu supaya gak duplikat
+            const radios = document.querySelectorAll('.correct-radio');
+            radios.forEach(radio => {
+                radio.onchange = null;
+                radio.addEventListener('change', function() {
+                    updateAllHiddenInputs();
+                    updateDataCorrectAttributes();
+                });
+            });
+        }
+
+        function updateAllHiddenInputs() {
+            const container = document.getElementById('answers-container');
+            const entries = container.getElementsByClassName('answer-entry');
+            const selectedRadio = document.querySelector('input[name="correct_answer"]:checked');
+
+            if (!selectedRadio) return;
+
+            const selectedValue = selectedRadio.value;
+
+            Array.from(entries).forEach((entry, index) => {
+                const hiddenInput = entry.querySelector('input[type="hidden"]');
+                if (hiddenInput) {
+                    hiddenInput.value = (index.toString() === selectedValue) ? '1' : '0';
                 }
             });
         }
 
-        function addAnswer() {
+        function updateDataCorrectAttributes() {
+            // Update atribut data-correct untuk tiap jawaban berdasarkan radio/checkbox checked
             const container = document.getElementById('answers-container');
+            const entries = container.getElementsByClassName('answer-entry');
             const questionType = document.querySelector('[name="question_type"]').value;
-            const newAnswer = document.createElement('div');
-            newAnswer.className = 'answer-entry mb-3';
-            
-            const currentIndex = answerCount;
-            
-            newAnswer.innerHTML = `
-                <div class="row">
-                    <div class="col-md-8">
-                        <div class="input-group input-group-outline">
-                            <input type="text" name="answers[${currentIndex}][answer_text]" class="form-control" placeholder="Jawaban" required>
-                        </div>
-                        <div class="input-group input-group-outline mt-2">
-                            <textarea name="answers[${currentIndex}][explanation]" class="form-control" placeholder="Penjelasan Jawaban" rows="2"></textarea>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-check">
-                            ${questionType === 'radio_button' ? 
-                                `<input class="form-check-input" type="radio" name="correct_answer" value="${currentIndex}">
-                                 <label class="form-check-label">Jawaban Benar</label>
-                                 <input type="hidden" name="answers[${currentIndex}][is_correct]" value="0">` :
-                                `<input class="form-check-input" type="checkbox" name="answers[${currentIndex}][is_correct]" value="1">
-                                 <label class="form-check-label">Jawaban Benar</label>`
-                            }
-                        </div>
-                    </div>
-                </div>
-            `;
-            container.appendChild(newAnswer);
-            answerCount++;
+
+            Array.from(entries).forEach((entry, index) => {
+                if (questionType === 'drag_and_drop') {
+                    const checkbox = entry.querySelector('input[type="checkbox"]');
+                    entry.setAttribute('data-correct', checkbox.checked ? '1' : '0');
+                } else {
+                    const radio = document.querySelector('input[name="correct_answer"]:checked');
+                    if (radio) {
+                        entry.setAttribute('data-correct', radio.value == index ? '1' : '0');
+                    }
+                }
+            });
         }
 
         document.addEventListener('DOMContentLoaded', function() {
             const questionTypeSelect = document.querySelector('[name="question_type"]');
-            const form = document.querySelector('form');
-            
-            questionTypeSelect.addEventListener('change', handleQuestionTypeChange);
-            
-            document.addEventListener('change', function(e) {
-                if (e.target.type === 'radio' && e.target.name === 'correct_answer') {
-                    const container = document.getElementById('answers-container');
-                    const answers = container.getElementsByClassName('answer-entry');
-                    
-                    Array.from(answers).forEach((answer, index) => {
-                        const hiddenInput = answer.querySelector('input[name$="[is_correct]"]');
-                        hiddenInput.value = (index.toString() === e.target.value) ? '1' : '0';
-                    });
-                }
-            });
 
-            form.addEventListener('submit', function(e) {
-                const questionType = questionTypeSelect.value;
-                if (questionType === 'radio_button') {
-                    const selectedRadio = document.querySelector('input[name="correct_answer"]:checked');
-                    if (!selectedRadio) {
-                        e.preventDefault();
-                        alert('Pilih satu jawaban yang benar untuk tipe soal Radio Button');
-                    }
-                }
-            });
+            questionTypeSelect.addEventListener('change', handleQuestionTypeChange);
+
+            // Inisialisasi
+            handleQuestionTypeChange();
         });
     </script>
     @endpush
+    <x-admin.tutorial />
 </x-layout>
